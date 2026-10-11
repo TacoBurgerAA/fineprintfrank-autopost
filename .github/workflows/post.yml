@@ -1,0 +1,52 @@
+name: post due social posts
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"      # GitHub may start scheduled runs late; post_due.py allows 3 h
+  workflow_dispatch: {}
+
+permissions:
+  contents: write               # commit posted.csv (also keeps the schedule from going idle)
+  issues: write                 # token-expiry reminders
+
+concurrency:
+  group: post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            /*.py
+            /*.csv
+            /*.json
+            /*.txt
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: post
+        env:
+          IG_TOKEN: ${{ secrets.IG_TOKEN }}
+          LI_TOKEN: ${{ secrets.LI_TOKEN }}
+          IG_USER_ID: ${{ vars.IG_USER_ID }}
+          LI_PERSON: ${{ vars.LI_PERSON }}
+          IG_EXPIRES: ${{ vars.IG_EXPIRES }}
+          LI_EXPIRES: ${{ vars.LI_EXPIRES }}
+          MEDIA_BASE: ${{ vars.MEDIA_BASE }}
+          GH_TOKEN: ${{ github.token }}
+        run: python post_due.py
+      - name: save log
+        if: always()
+        run: |
+          git config user.name "autopost"
+          git config user.email "autopost@users.noreply.github.com"
+          git add posted.csv 2>/dev/null || exit 0
+          git diff --cached --quiet && exit 0
+          git commit -m "log posts"
+          git pull --rebase
+          git push
